@@ -1,0 +1,19 @@
+<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>شاشة الصيدلية</title>
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css"></head><body>
+<div class="hero"><img src="logo.png" alt=""><h1 id="nm">...</h1></div>
+<div class="card" style="text-align:center"><div id="qr" style="display:inline-block;padding:10px"></div>
+<p>امسح الرمز من تطبيق الحضور • يتغير تلقائياً <b id="c"></b></p><div id="er" class="err"></div></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="config.js"></script>
+<script>
+const k=new URLSearchParams(location.hash.slice(1)).get('k');let last,q;
+async function tick(){const{data,error}=await sb.rpc('kiosk_token',{k});
+ if(error){document.getElementById('er').textContent=error.message;return}
+ document.getElementById('nm').textContent='صيدلية '+data.name;document.getElementById('c').textContent=data.left+' ث';
+ if(data.t!==last){last=data.t;const el=document.getElementById('qr');el.innerHTML='';
+  new QRCode(el,{text:JSON.stringify({p:data.p,t:data.t}),width:260,height:260,correctLevel:QRCode.CorrectLevel.M})}}
+tick();setInterval(tick,3000);
+</script></body></html>

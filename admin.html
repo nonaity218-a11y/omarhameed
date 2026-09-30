@@ -1,0 +1,61 @@
+<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>لوحة الإدارة</title>
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css"></head><body>
+<div class="hero"><img src="logo.png" alt=""><h1>نظام الحضور والانصراف — الإدارة</h1></div>
+<div class="card" id="login"><h3>دخول الأدمن</h3><input id="em" placeholder="البريد الإلكتروني"><input id="pw" type="password" placeholder="كلمة المرور">
+<button onclick="signin()" style="width:100%">دخول</button><div id="le"></div></div>
+<div id="app" hidden><div class="tabs" id="tabs"></div><div class="card wide" id="view"></div></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script>
+const $=s=>document.getElementById(s),v=()=>$('view');
+const q=async p=>{const{data,error}=await p;if(error){alert(error.message);throw error}return data};
+const hm=x=>x?new Date(x).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Baghdad'}):'—';
+const opts=(a,f)=>a.map(x=>`<option value="${x.id}">${f(x)}</option>`).join('');
+const T={rep:'التقارير',emp:'الموظفون',sh:'الشفتات',ph:'الصيدليات'};
+async function signin(){const{error}=await sb.auth.signInWithPassword({email:$('em').value,password:$('pw').value});
+ if(error)return $('le').innerHTML=`<div class="msg err">${error.message}</div>`;start()}
+async function start(){const{data:{session}}=await sb.auth.getSession();if(!session)return;
+ const{data}=await sb.from('admins').select('email');if(!data?.length){await sb.auth.signOut();return $('le').innerHTML='<div class="msg err">هذا الحساب ليس أدمن</div>'}
+ $('login').hidden=true;$('app').hidden=false;
+ $('tabs').innerHTML=Object.entries(T).map(([k,t])=>`<button id="t-${k}" onclick="tab('${k}')">${t}</button>`).join('')+'<button class="sec" onclick="sb.auth.signOut().then(()=>location.reload())">خروج</button>';tab('rep')}
+function tab(k){document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.id=='t-'+k));({rep,emp,sh,ph})[k]()}
+
+async function ph(){const d=await q(sb.from('pharmacies').select('*').order('name'));
+ v().innerHTML=`<h3>الصيدليات</h3><div class="grid"><input id="n" placeholder="اسم الصيدلية"><input id="la" placeholder="خط العرض"><input id="ln" placeholder="خط الطول"><input id="r" type="number" value="150" placeholder="النطاق (متر)"></div>
+ <button class="sec sm" onclick="navigator.geolocation.getCurrentPosition(p=>{la.value=p.coords.latitude;ln.value=p.coords.longitude})">📍 موقعي الحالي</button> <button onclick="addPh()">إضافة</button>
+ <div class="tbl"><table><tr><th>الصيدلية</th><th>النطاق</th><th>رابط شاشة الـ QR</th></tr>${d.map(p=>`<tr><td>${p.name}</td><td>${p.radius_m}م</td><td><input readonly onclick="this.select()" value="${new URL('kiosk.html#k='+p.kiosk_key,location.href)}"></td></tr>`).join('')}</table></div>`}
+async function addPh(){await q(sb.from('pharmacies').insert({name:n.value,lat:+la.value||null,lng:+ln.value||null,radius_m:+r.value||150}));ph()}
+
+async function sh(){const[p,d]=await Promise.all([q(sb.from('pharmacies').select('id,name')),q(sb.from('shifts').select('*,pharmacies(name)').order('start_time'))]);
+ v().innerHTML=`<h3>الشفتات</h3><div class="grid"><select id="sp">${opts(p,x=>x.name)}</select><input id="sn" placeholder="اسم الشفت"><label>الدخول<input id="s1" type="time"></label><label>الانصراف<input id="s2" type="time"></label><label>سماح (دقيقة)<input id="sg" type="number" value="15"></label></div>
+ <button onclick="addSh()">إضافة</button><div class="tbl"><table><tr><th>الصيدلية</th><th>الشفت</th><th>الدخول</th><th>الانصراف</th><th>السماح</th><th></th></tr>${d.map(s=>`<tr><td>${s.pharmacies.name}</td><td>${s.name}</td><td>${s.start_time.slice(0,5)}</td><td>${s.end_time.slice(0,5)}</td><td>${s.grace_min}</td><td><button class="sec sm" onclick="delSh('${s.id}')">حذف</button></td></tr>`).join('')}</table></div>`}
+async function addSh(){await q(sb.from('shifts').insert({pharmacy_id:sp.value,name:sn.value,start_time:s1.value,end_time:s2.value,grace_min:+sg.value||0}));sh()}
+async function delSh(i){if(confirm('حذف؟')){await q(sb.from('shifts').delete().eq('id',i));sh()}}
+
+async function emp(){const[p,s,d]=await Promise.all([q(sb.from('pharmacies').select('id,name')),q(sb.from('shifts').select('id,name,pharmacies(name)')),q(sb.from('employees').select('*,pharmacies(name),shifts(name)').order('full_name'))]);
+ v().innerHTML=`<h3>الموظفون</h3><div class="grid"><input id="en" placeholder="الاسم الكامل"><input id="eu" placeholder="اسم المستخدم" autocapitalize="off"><input id="ep" placeholder="كلمة المرور"><input id="eh" placeholder="الهاتف"><input id="ej" placeholder="الوظيفة"><select id="epp">${opts(p,x=>x.name)}</select><select id="es">${opts(s,x=>x.pharmacies.name+' - '+x.name)}</select></div>
+ <button onclick="addEmp()">إضافة موظف</button><div class="tbl"><table><tr><th>الاسم</th><th>المستخدم</th><th>الصيدلية</th><th>الشفت</th><th>الجهاز</th><th>الحالة</th><th></th></tr>${d.map(e=>`<tr><td>${e.full_name}</td><td>${e.username}</td><td>${e.pharmacies?.name||'—'}</td><td>${e.shifts?.name||'—'}</td><td>${e.device_id?'مربوط':'—'}</td><td>${e.active?'فعّال':'موقوف'}</td>
+ <td><button class="sec sm" onclick="rd('${e.id}')">فك الجهاز</button> <button class="sec sm" onclick="rp('${e.id}')">كلمة مرور</button> <button class="sec sm" onclick="tg('${e.id}',${!e.active})">${e.active?'إيقاف':'تفعيل'}</button></td></tr>`).join('')}</table></div>`}
+async function addEmp(){await q(sb.rpc('admin_add_employee',{n:en.value,u:eu.value,pw:ep.value,ph:eh.value,pid:epp.value,sid:es.value,job:ej.value}));emp()}
+async function rd(i){await q(sb.rpc('admin_reset_device',{eid:i}));emp()}
+async function rp(i){const w=prompt('كلمة المرور الجديدة');if(w){await q(sb.rpc('admin_set_password',{eid:i,pw:w}));alert('تم')}}
+async function tg(i,a){await q(sb.from('employees').update({active:a}).eq('id',i));emp()}
+
+let rows=[];
+async function rep(){const[p,e]=await Promise.all([q(sb.from('pharmacies').select('id,name')),q(sb.from('employees').select('id,full_name').order('full_name'))]);
+ const t=new Date().toISOString().slice(0,10);
+ v().innerHTML=`<h3>التقارير</h3><div class="grid"><label>من<input id="f1" type="date" value="${t.slice(0,8)}01"></label><label>إلى<input id="f2" type="date" value="${t}"></label>
+ <label>الصيدلية<select id="fp"><option value="">الكل</option>${opts(p,x=>x.name)}</select></label><label>الموظف<select id="fe"><option value="">الكل</option>${opts(e,x=>x.full_name)}</select></label></div>
+ <button onclick="load()">عرض</button> <button class="sec" onclick="csv()">تصدير CSV</button><div id="out"></div>`;load()}
+async function load(){let r=sb.from('attendance').select('*,employees(full_name),pharmacies(name),shifts(name)').gte('work_date',f1.value).lte('work_date',f2.value).order('work_date',{ascending:false});
+ if(fp.value)r=r.eq('pharmacy_id',fp.value);if(fe.value)r=r.eq('employee_id',fe.value);rows=await q(r);
+ const L=rows.reduce((a,x)=>a+x.late_min,0),E=rows.reduce((a,x)=>a+x.early_min,0);
+ out.innerHTML=`<div class="grid" style="margin:12px 0"><div class="stat"><b>${rows.length}</b>سجل حضور</div><div class="stat"><b>${rows.filter(x=>x.late_min).length}</b>حالات تأخير</div><div class="stat"><b>${L}</b>دقائق التأخير</div><div class="stat"><b>${E}</b>دقائق خروج مبكر</div></div>
+ <div class="tbl"><table><tr><th>التاريخ</th><th>الموظف</th><th>الصيدلية</th><th>الشفت</th><th>حضور</th><th>انصراف</th><th>تأخير</th><th>خروج مبكر</th></tr>${rows.map(x=>`<tr><td>${x.work_date}</td><td>${x.employees.full_name}</td><td>${x.pharmacies.name}</td><td>${x.shifts?.name||'—'}</td><td>${hm(x.check_in)}</td><td>${hm(x.check_out)}</td><td class="${x.late_min?'late':''}">${x.late_min||'—'}</td><td class="${x.early_min?'late':''}">${x.early_min||'—'}</td></tr>`).join('')}</table></div>`}
+function csv(){const h='التاريخ,الموظف,الصيدلية,الشفت,حضور,انصراف,تأخير,خروج مبكر\n';
+ const b=new Blob(['\ufeff'+h+rows.map(x=>[x.work_date,x.employees.full_name,x.pharmacies.name,x.shifts?.name||'',hm(x.check_in),hm(x.check_out),x.late_min,x.early_min].join(',')).join('\n')],{type:'text/csv'});
+ const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='attendance.csv';a.click()}
+start();
+</script></body></html>
