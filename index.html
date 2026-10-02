@@ -1,0 +1,55 @@
+<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>الحضور والانصراف</title>
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css"></head><body>
+<div class="hero"><img src="logo.png" alt=""><h1>نظام الحضور والانصراف</h1></div>
+<form class="card" id="login" onsubmit="doLogin();return false" autocomplete="on"><h3>تسجيل الدخول</h3>
+<input id="u" name="username" autocomplete="username" placeholder="اسم المستخدم" autocapitalize="off"><input id="p" name="password" autocomplete="current-password" type="password" placeholder="كلمة المرور">
+<button style="width:100%">دخول</button><div id="e1"></div></form>
+<div class="card" id="main" hidden><h3 id="hi"></h3><p id="st"></p>
+<div id="reader" style="width:100%"></div>
+<button id="scan" onclick="scan()" style="width:100%"></button>
+<button class="sec" onclick="gps()" style="width:100%;margin-top:8px">📍 بدون زميل (بالموقع GPS)</button>
+<button id="qrbtn" class="sec" onclick="showQR()" style="width:100%;margin-top:8px" hidden>🔑 اعرض رمزي لزميل</button>
+<div id="qrbox" hidden style="text-align:center;margin-top:10px"><div id="qr" style="display:inline-block;padding:8px"></div>
+<p>يتغير كل 15 ثانية، أبقِ الشاشة مفتوحة</p><div id="qrmsg"></div><button class="sec sm" onclick="hideQR()">إخفاء</button></div>
+<div id="res"></div><button class="sec sm" onclick="logout()" style="margin-top:10px">خروج</button></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="config.js"></script>
+<script>
+const $=s=>document.getElementById(s);
+const dev=localStorage.dev||(localStorage.dev=crypto.randomUUID());
+const hm=x=>x?new Date(x).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Baghdad'}):'—';
+const err=m=>$('res').innerHTML=`<div class="msg err">${m}</div>`;
+let C={},S={},qr,qt,last;
+if(navigator.geolocation)navigator.geolocation.watchPosition(p=>C=p.coords,()=>{},{enableHighAccuracy:true});
+const pos=()=>C.latitude!==undefined?Promise.resolve(C):new Promise(r=>navigator.geolocation?navigator.geolocation.getCurrentPosition(p=>r(p.coords),()=>r({}),{enableHighAccuracy:true,timeout:10000}):r({}));
+async function doLogin(){const{data,error}=await sb.rpc('employee_login',{u:$('u').value.trim(),pw:$('p').value,dev});
+ if(error)return $('e1').innerHTML=`<div class="msg err">${error.message}</div>`;localStorage.tk=data.token;localStorage.un=$('u').value.trim();home()}
+function logout(){localStorage.removeItem('tk');location.reload()}
+async function home(){if(!localStorage.tk)return;
+ const{data,error}=await sb.rpc('my_status',{tk:localStorage.tk});if(error){if(/انتهت الجلسة/.test(error.message))return logout();$('login').hidden=true;$('main').hidden=false;$('st').innerHTML='تعذر الاتصال بالإنترنت. <a href="" onclick="location.reload();return false">أعد المحاولة</a>';return}S=data;
+ $('login').hidden=true;$('main').hidden=false;$('hi').textContent='أهلاً '+S.name;
+ $('st').innerHTML=S.open?`🟢 على رأس العمل منذ ${hm(S.since)} — ${S.pharmacy}`:`⚪ غير مسجّل${S.last_out?` — آخر خروج ${hm(S.last_out)}`:''}`;
+ $('scan').textContent=S.open?'📷 امسح رمز زميل لتسجيل الخروج':'📷 امسح رمز زميل لتسجيل الدخول';
+ $('qrbtn').hidden=!S.can_witness;if(!S.open)hideQR()}
+async function scan(){$('res').innerHTML='';qr=new Html5Qrcode('reader');
+ try{await qr.start({facingMode:'environment'},{fps:10,qrbox:240},onScan)}catch(e){err('تعذر فتح الكاميرا، اسمح بالصلاحية')}}
+function show(d){$('res').innerHTML=`<div class="msg ok">${d.type=='in'?`✅ تم الحضور ${d.time} — ${d.pharmacy}${d.late?` (تأخير ${d.late} دقيقة)`:''}`:`👋 تم الخروج ${d.time} — ${d.pharmacy}${d.early?` (خروج مبكر ${d.early} دقيقة)`:''}`}${d.flag?'<br><small>سُجّل بدون شاهد وسيظهر للإدارة</small>':''}</div>`;home()}
+async function onScan(txt){await qr.stop().catch(()=>{});let j;try{j=JSON.parse(txt);if(!j.e)throw 0}catch{return err('رمز غير صالح')}
+ $('res').textContent='جارٍ التحقق...';const c=await pos();
+ const{data,error}=await sb.rpc('punch2',{tk:localStorage.tk,w:j.e,t:j.t,la:c.latitude??null,lo:c.longitude??null});
+ error?err(error.message):show(data)}
+async function gps(){$('res').textContent='جارٍ التحقق...';const c=await pos();
+ const{data,error}=await sb.rpc('punch_gps',{tk:localStorage.tk,la:c.latitude??null,lo:c.longitude??null});error?err(error.message):show(data)}
+async function showQR(){$('qrbox').hidden=false;clearInterval(qt);
+ const run=async()=>{const c=await pos();const{data,error}=await sb.rpc('my_qr',{tk:localStorage.tk,la:c.latitude??null,lo:c.longitude??null});
+  if(error){$('qrmsg').innerHTML=`<div class="msg err">${error.message}</div>`;return}$('qrmsg').textContent='';
+  if(data.t!==last){last=data.t;$('qr').innerHTML='';new QRCode($('qr'),{text:JSON.stringify({e:data.e,t:data.t}),width:230,height:230})}};
+ run();qt=setInterval(run,4000)}
+function hideQR(){clearInterval(qt);$('qrbox').hidden=true}
+$('u').value=localStorage.un||'';if(navigator.storage&&navigator.storage.persist)navigator.storage.persist();
+home();
+</script></body></html>
